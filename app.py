@@ -23,8 +23,23 @@ def check_image_readability(file_path):
     try:
         image = Image.open(file_path).convert("RGB")
 
-        # Get OCR data with confidence scores
-        data = pytesseract.image_to_data(image, output_type=Output.DICT)
+        # ✅ Resize huge images to avoid OOM / long OCR time
+        MAX_DIM = 1600
+        w, h = image.size
+        if max(w, h) > MAX_DIM:
+            scale = MAX_DIM / float(max(w, h))
+            image = image.resize((int(w * scale), int(h * scale)))
+
+        # ✅ OCR config: faster, and add timeout (seconds)
+        config = "--oem 1 --psm 6"
+
+        # Confidence scores (timeout protects from hanging)
+        data = pytesseract.image_to_data(
+            image,
+            output_type=Output.DICT,
+            config=config,
+            timeout=8
+        )
 
         confidences = []
         for conf in data.get("conf", []):
@@ -38,7 +53,8 @@ def check_image_readability(file_path):
         avg_conf = sum(confidences) / len(confidences) if confidences else 0
         normalized_conf = round(avg_conf / 100, 2)
 
-        text = pytesseract.image_to_string(image)
+        # ✅ Use timeout here too
+        text = pytesseract.image_to_string(image, config=config, timeout=8)
         text_length = len("".join(ch for ch in text if ch.isalnum()))
 
         readable = True
@@ -58,7 +74,22 @@ def check_image_readability(file_path):
             "quality_reason": reason
         }
 
-    except Exception as e:
+    except pytesseract.pytesseract.TesseractError:
+        return {
+            "readable": False,
+            "ocr_confidence": 0,
+            "text_length": 0,
+            "quality_reason": "tesseract_error"
+        }
+    except RuntimeError:
+        # pytesseract raises RuntimeError on timeout
+        return {
+            "readable": False,
+            "ocr_confidence": 0,
+            "text_length": 0,
+            "quality_reason": "ocr_timeout"
+        }
+    except Exception:
         return {
             "readable": False,
             "ocr_confidence": 0,
@@ -193,5 +224,6 @@ def classify():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
 
 
