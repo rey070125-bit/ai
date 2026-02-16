@@ -137,47 +137,61 @@ def classify_by_content(text):
 
 @app.route('/classify', methods=['POST'])
 def classify():
-    file = request.files.get('file')
-    if not file:
-        return jsonify({"error": "No file"}), 400
+    try:
+        file = request.files.get('file')
+        if not file:
+            return jsonify({"error": "No file"}), 400
 
-    ext = os.path.splitext(file.filename)[1].lower()
+        ext = os.path.splitext(file.filename)[1].lower()
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as temp:
-        file.save(temp.name)
-        temp_path = temp.name
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as temp:
+            file.save(temp.name)
+            temp_path = temp.name
 
-    # NEW: readability check for images
-    readability_data = {
-        "readable": True,
-        "ocr_confidence": None,
-        "text_length": None,
-        "quality_reason": "not_image"
-    }
+        readability_data = {
+            "readable": True,
+            "ocr_confidence": None,
+            "text_length": None,
+            "quality_reason": "not_image"
+        }
 
-    if ext in [".jpg", ".jpeg", ".png"]:
-        readability_data = check_image_readability(temp_path)
+        if ext in [".jpg", ".jpeg", ".png"]:
+            readability_data = check_image_readability(temp_path)
 
-    text = extract_text(temp_path, ext)
-    os.remove(temp_path)
+        text = extract_text(temp_path, ext)
 
-    if not text.strip():
+        try:
+            os.remove(temp_path)
+        except:
+            pass
+
+        if not text.strip():
+            return jsonify({
+                "document_type": "others",
+                "confidence": 0.50,
+                **readability_data
+            }), 200
+
+        doc_type, confidence = classify_by_content(text)
+
         return jsonify({
-            "document_type": "others",
-            "confidence": 0.50,
+            "document_type": doc_type,
+            "confidence": round(confidence, 2),
             **readability_data
-        })
+        }), 200
 
-    doc_type, confidence = classify_by_content(text)
+    except Exception as e:
+        # 👇 THIS will show the real reason for HTTP 500
+        return jsonify({
+            "error": "server_exception",
+            "detail": str(e),
+            "hint": "Check file type, OCR libs, or PDF parsing."
+        }), 500
 
-    return jsonify({
-        "document_type": doc_type,
-        "confidence": round(confidence, 2),
-        **readability_data
-    })
 
 # ==================================================
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
 
