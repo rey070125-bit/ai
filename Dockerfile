@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# Install Tesseract OCR (and English language data)
+# Install Tesseract
 RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     tesseract-ocr-eng \
@@ -13,7 +13,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Render sets $PORT automatically
-CMD ["sh", "-c", "gunicorn -b 0.0.0.0:${PORT:-5000} --timeout 120 --workers 1 --threads 2 app:app"]
+EXPOSE 10000
 
-
+CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:10000", "--workers", "1", "--threads", "2", "--timeout", "120", "--graceful-timeout", "30"]
